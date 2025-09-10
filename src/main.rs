@@ -5,6 +5,7 @@ enum Error {
     IoReadError(std::io::Error),
     IoWriteError(std::io::Error),
     MdUncloseCodeBlockError(usize),
+    MdNoShellError(usize),
     ExecNoProgram(usize),
     ExecRunError(std::io::Error, String, usize),
     ExecFailure(String, usize),
@@ -24,6 +25,9 @@ impl std::fmt::Debug for Error {
             Self::IoWriteError(err) => write!(f, "Faield to write to outpout: {err:?}"),
             Self::MdUncloseCodeBlockError(ln) => {
                 write!(f, "Unclosed code block starting at line {ln}")
+            }
+            Self::MdNoShellError(ln) => {
+                write!(f, "Missing shell name for code block starting at line {ln}")
             }
             Self::ExecNoProgram(ln) => {
                 write!(f, "No program specified in code block starting at line {ln}")
@@ -63,6 +67,12 @@ fn main() -> Result<(), Error> {
             // We've found a code block!
             if line.starts_with("```") {
                 line_number_code = line_number;
+                let shell = line[3..line.len() - 1].to_string();
+
+                if shell.len() == 0 {
+                    return Err(Error::MdNoShellError(line_number));
+                }
+
                 line.clear();
 
                 while buff.read_line(&mut line).map_err(Error::IoReadError)? != 0 && !line.starts_with("```") {
@@ -75,19 +85,16 @@ fn main() -> Result<(), Error> {
                     return Err(Error::MdUncloseCodeBlockError(line_number));
                 }
 
-                let mut args = cmd.split_whitespace();
-                let program = args.next().ok_or(Error::ExecNoProgram(line_number))?;
-
-                let mut process = std::process::Command::new(program);
-                process.args(args);
+                let mut process = std::process::Command::new(shell);
+                let program_and_args = &cmd[..cmd.len() - 1];
+                process.arg("-c").arg(program_and_args);
 
                 let output = process
                     .output()
-                    .map_err(|err| Error::ExecRunError(err, program_and_args(&mut process), line_number))?;
+                    .map_err(|err| Error::ExecRunError(err, program_and_args.to_string(), line_number))?;
 
                 if !output.status.success() {
-                    let program_and_args = program_and_args(&mut process);
-                    return failure(&mut out, &file_name, line_number, &program_and_args);
+                    return failure(&mut out, &file_name, line_number, program_and_args);
                 } else {
                     success(&mut out, &file_name, line_number)?;
                 }
@@ -101,18 +108,6 @@ fn main() -> Result<(), Error> {
     }
 
     Ok(())
-}
-
-fn program_and_args(process: &mut std::process::Command) -> String {
-    let program = process.get_program();
-    let mut program_and_args = process.get_args().fold(String::new(), |mut acc, arg| {
-        acc.push(' ');
-        acc.push_str(&arg.to_string_lossy());
-        acc
-    });
-
-    program_and_args.insert_str(0, &program.to_string_lossy());
-    program_and_args
 }
 
 fn success(out: &mut impl std::io::Write, file_name: &str, line_number: usize) -> Result<(), Error> {
@@ -144,7 +139,7 @@ fn failure(
             {program_and_args}\n\
             ```\n\
             {RESET}\
-        "
+        ",
     )
     .map_err(Error::IoWriteError)
 }
