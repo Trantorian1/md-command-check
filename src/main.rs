@@ -1,10 +1,10 @@
-use std::io::{BufRead, Write};
+use std::io::BufRead;
 
 enum Error {
     IoOpenError(std::io::Error),
     IoReadError(std::io::Error),
     IoWriteError(std::io::Error),
-    MdUncloseCodeBlockError(usize),
+    MdUncloseCodeBlockError(String, usize),
     MdNoShellError(usize),
     ExecNoProgram(usize),
     ExecRunError(std::io::Error, String, usize),
@@ -14,7 +14,8 @@ enum Error {
 const RED: &str = "\x1b[0;31m";
 const GREEN: &str = "\x1b[0;32m";
 const BOLD: &str = "\x1b[1m";
-const FAINT: &str = "\x1b[2;37m";
+const FAINT: &str = "\x1b[2m";
+const ITALIC: &str = "\x1b[3m";
 const RESET: &str = "\x1b[m";
 
 impl std::fmt::Debug for Error {
@@ -23,8 +24,11 @@ impl std::fmt::Debug for Error {
             Self::IoOpenError(err) => write!(f, "Failed to open file: {err:?}"),
             Self::IoReadError(err) => write!(f, "Failed to read file: {err:?}"),
             Self::IoWriteError(err) => write!(f, "Faield to write to outpout: {err:?}"),
-            Self::MdUncloseCodeBlockError(ln) => {
-                write!(f, "Unclosed code block starting at line {ln}")
+            Self::MdUncloseCodeBlockError(line, ln) => {
+                write!(
+                    f,
+                    "Invalid closing delimiter for code block starting at line {ln}: {line}"
+                )
             }
             Self::MdNoShellError(ln) => {
                 write!(f, "Missing shell name for code block starting at line {ln}")
@@ -81,8 +85,11 @@ fn main() -> Result<(), Error> {
                     line.clear();
                 }
 
-                if !line.starts_with("```") {
-                    return Err(Error::MdUncloseCodeBlockError(line_number));
+                if line != "```\n" {
+                    return Err(Error::MdUncloseCodeBlockError(
+                        line[..line.len() - 1].to_string(),
+                        line_number,
+                    ));
                 }
 
                 let mut process = std::process::Command::new(shell);
@@ -94,7 +101,14 @@ fn main() -> Result<(), Error> {
                     .map_err(|err| Error::ExecRunError(err, program_and_args.to_string(), line_number))?;
 
                 if !output.status.success() {
-                    return failure(&mut out, &file_name, line_number, program_and_args);
+                    return failure(
+                        &mut out,
+                        &file_name,
+                        line_number,
+                        program_and_args,
+                        &output.stdout,
+                        &output.stderr,
+                    );
                 } else {
                     success(&mut out, &file_name, line_number)?;
                 }
@@ -127,6 +141,8 @@ fn failure(
     file_name: &str,
     line_number: usize,
     program_and_args: &str,
+    stdout: &[u8],
+    stderr: &[u8],
 ) -> Result<(), Error> {
     write!(
         out,
@@ -141,5 +157,36 @@ fn failure(
             {RESET}\
         ",
     )
-    .map_err(Error::IoWriteError)
+    .map_err(Error::IoWriteError)?;
+
+    if !stdout.is_empty() {
+        let mut stdout = String::from_utf8_lossy(&stdout[..stdout.len() - 1]).replace("\n", "\n>> ");
+        stdout.insert_str(0, ">> ");
+        write!(
+            out,
+            "\
+            >> {BOLD}{ITALIC}stdout{RESET}\n\
+            >>\n\
+            {stdout}\n\
+            >>\n\
+        ",
+        )
+        .map_err(Error::IoWriteError)?;
+    }
+
+    if !stderr.is_empty() {
+        let mut stderr = String::from_utf8_lossy(&stderr[..stderr.len() - 1]).replace("\n", "\n>> ");
+        stderr.insert_str(0, ">> ");
+        write!(
+            out,
+            "\
+            >> {BOLD}{ITALIC}stderr{RESET}\n\
+            >>\n\
+            {stderr}\n\
+            >>\n\
+        ",
+        )
+        .map_err(Error::IoWriteError)?;
+    }
+    Ok(())
 }
