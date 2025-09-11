@@ -14,9 +14,15 @@ exit 1
 
 ```bash
 echo <TIME>
+echo "Hello World"
 ```
 
 <!-- env MESSAGE -->
 > ```bash
 > echo <MESSAGE>
+> ```
+
+<!-- ignore -->
+> ```bash
+> exit 1
 > ```

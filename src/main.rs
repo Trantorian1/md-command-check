@@ -102,7 +102,7 @@ fn main() -> std::io::Result<()> {
             // We've found a code block!
             else if line.starts_with("```") {
                 line_number_code = line_number;
-                let lang = line[3..line.len()].to_string();
+                let lang = line[3..line.len()].trim_end().to_string();
 
                 if lang.len() == 0 {
                     return err_no_lang(&mut out, &file_name, line_number);
@@ -116,7 +116,7 @@ fn main() -> std::io::Result<()> {
                     line.clear();
                 }
 
-                if line != "```" {
+                if line != "```\n" {
                     return err_block_close(&mut out, &file_name, line_number, &line);
                 }
 
@@ -221,6 +221,6 @@ fn main() -> std::io::Result<()> {
 
 fn read_line_sanitized(buff: &mut impl std::io::BufRead, line: &mut String) -> std::io::Result<usize> {
     let n = buff.read_line(line)?;
-    *line = line.strip_prefix('>').unwrap_or(&line).trim().to_string();
+    *line = line.strip_prefix('>').unwrap_or(&line).trim_start().to_string();
     Ok(n)
 }

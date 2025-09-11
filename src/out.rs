@@ -218,6 +218,7 @@ fn log_program(
     accent: &str,
 ) -> std::io::Result<()> {
     let program_and_args = program_and_args
+        .trim()
         .to_string()
         .replace("\n", &format!("\n{accent}│{RESET} "));
     if !terminate {
@@ -243,7 +244,7 @@ fn log_program(
 
 fn log_stdout(out: &mut impl std::io::Write, mut stdout: String, terminate: bool, accent: &str) -> std::io::Result<()> {
     if !stdout.is_empty() {
-        stdout = stdout.trim().replace("\n", &format!("\n{accent}│{RESET} >>"));
+        stdout = stdout.trim().replace("\n", &format!("\n{accent}│{RESET} >> "));
         if !terminate {
             write!(
                 out,
@@ -271,7 +272,7 @@ fn log_stdout(out: &mut impl std::io::Write, mut stdout: String, terminate: bool
 
 fn log_stderr(out: &mut impl std::io::Write, mut stderr: String, accent: &str) -> std::io::Result<()> {
     if !stderr.is_empty() {
-        stderr = stderr.trim().replace("\n", &format!("\n{accent}│{RESET} >>"));
+        stderr = stderr.trim().replace("\n", &format!("\n{accent}│{RESET} >> "));
         write!(
             out,
             "\
