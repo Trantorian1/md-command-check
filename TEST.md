@@ -1,7 +1,8 @@
+<!-- extract TIME "Finished.*in (.*)" -->
 ```bash
 cargo check
 ```
 
-```sh
-exit 1
+```bash
+echo <TIME>
 ```
