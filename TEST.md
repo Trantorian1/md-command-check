@@ -15,3 +15,7 @@ exit 1
 ```bash
 echo <TIME>
 ```
+
+> ```bash
+> echo hello world
+> ```
