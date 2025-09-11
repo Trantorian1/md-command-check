@@ -76,6 +76,7 @@ fn main() -> Result<(), Error> {
         let mut buff = std::io::BufReader::new(file);
         let mut line_number = 0;
         let mut line_number_code = 0;
+        let mut ignore = false;
 
         let mut var_local = Vec::with_capacity(8);
 
@@ -85,30 +86,36 @@ fn main() -> Result<(), Error> {
             // We've found a comment!
             if line.starts_with("<!--") {
                 let mut words = line.trim().split_whitespace().skip(1);
-                if let Some("extract") = words.next() {
-                    let Some(var) = words.next() else {
-                        err_extract_no_var(&mut out, &file_name, line_number);
-                        return Ok(());
-                    };
+                match words.next() {
+                    Some("extract") => {
+                        let Some(var) = words.next() else {
+                            err_extract_no_var(&mut out, &file_name, line_number);
+                            return Ok(());
+                        };
 
-                    let mut pat = String::with_capacity((line.len() - 4 - var.len()).saturating_sub(4));
-                    while let Some(word) = words.next() {
-                        if word == "-->" {
-                            break;
+                        let mut pat = String::with_capacity((line.len() - 4 - var.len()).saturating_sub(4));
+                        while let Some(word) = words.next() {
+                            if word == "-->" {
+                                break;
+                            }
+                            if !pat.is_empty() {
+                                pat.push(' ');
+                            }
+                            pat.push_str(word);
                         }
-                        if !pat.is_empty() {
-                            pat.push(' ');
-                        }
-                        pat.push_str(word);
+
+                        let pat = pat.trim_matches('"');
+                        let Ok(re) = regex::Regex::new(pat) else {
+                            err_extract_pattern(&mut out, &file_name, line_number, pat);
+                            return Ok(());
+                        };
+
+                        var_local.push((var.to_string(), re));
                     }
-
-                    let pat = pat.trim_matches('"');
-                    let Ok(re) = regex::Regex::new(pat) else {
-                        err_extract_pattern(&mut out, &file_name, line_number, pat);
-                        return Ok(());
-                    };
-
-                    var_local.push((var.to_string(), re));
+                    Some("ignore") => {
+                        ignore = true;
+                    }
+                    _ => {}
                 }
             }
             // We've found a code block!
@@ -135,10 +142,12 @@ fn main() -> Result<(), Error> {
                     return Ok(());
                 }
 
-                if shell != "bash" && shell != "sh" {
+                if shell != "bash" && shell != "sh" || ignore {
+                    ignored(&mut out, &file_name, line_number)?;
+                    ignore = false;
                     line.clear();
                     cmd.clear();
-                    line_number += line_number_code;
+                    line_number = line_number_code + 1;
                     continue;
                 }
 
@@ -200,7 +209,7 @@ fn main() -> Result<(), Error> {
                 success(&mut out, &file_name, line_number)?;
 
                 cmd.clear();
-                line_number += line_number_code;
+                line_number = line_number_code + 1;
             }
 
             line.clear();
@@ -217,6 +226,18 @@ fn success(out: &mut impl std::io::Write, file_name: &str, line_number: usize) -
             ✅{BOLD}{file_name}{RESET}: \
             code block at line {line_number} - \
             {GREEN}PASS{RESET}\n\
+        "
+    )
+    .map_err(Error::IoWriteError)
+}
+
+fn ignored(out: &mut impl std::io::Write, file_name: &str, line_number: usize) -> Result<(), Error> {
+    write!(
+        out,
+        "  \
+            {BOLD}{file_name}{RESET}: \
+            code block at line {line_number} - \
+            {FAINT}{ITALIC}IGNORED{RESET}\n\
         "
     )
     .map_err(Error::IoWriteError)

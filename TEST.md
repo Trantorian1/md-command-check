@@ -7,6 +7,11 @@ cargo check
 println!("test");
 ```
 
+<!-- ignore -->
+```bash
+exit 1
+```
+
 ```bash
 echo <TIME>
 ```
