@@ -8,10 +8,12 @@ fn main() -> std::io::Result<()> {
 
     // options
     let mut debug = false;
+    let mut list = false;
 
     while args.peek().is_some_and(|arg| arg.starts_with("--")) {
         match args.next().expect("Checked above").as_ref() {
             "--debug" => debug = true,
+            "--list" => list = true,
             _ => {}
         }
     }
@@ -52,40 +54,44 @@ fn main() -> std::io::Result<()> {
                 let mut words = line.split_whitespace().skip(1);
                 match words.next() {
                     Some("extract") => {
-                        let Some(var) = words.next() else {
-                            return err_extract_no_var(&mut out, &file_name, line_number);
-                        };
+                        if !list {
+                            let Some(var) = words.next() else {
+                                return err_extract_no_var(&mut out, &file_name, line_number);
+                            };
 
-                        let mut pat = String::with_capacity((line.len() - 4 - var.len()).saturating_sub(4));
-                        while let Some(word) = words.next() {
-                            if word == "-->" {
-                                break;
+                            let mut pat = String::with_capacity((line.len() - 4 - var.len()).saturating_sub(4));
+                            while let Some(word) = words.next() {
+                                if word == "-->" {
+                                    break;
+                                }
+                                if !pat.is_empty() {
+                                    pat.push(' ');
+                                }
+                                pat.push_str(word);
                             }
-                            if !pat.is_empty() {
-                                pat.push(' ');
-                            }
-                            pat.push_str(word);
+
+                            let pat = pat.trim_matches('"');
+                            let Ok(re) = regex::Regex::new(pat) else {
+                                return err_extract_pattern(&mut out, &file_name, line_number, pat);
+                            };
+
+                            var_local.push((var.to_string(), re));
                         }
-
-                        let pat = pat.trim_matches('"');
-                        let Ok(re) = regex::Regex::new(pat) else {
-                            return err_extract_pattern(&mut out, &file_name, line_number, pat);
-                        };
-
-                        var_local.push((var.to_string(), re));
                     }
                     Some("env") => {
-                        let Some(mut var) = words.next().map(String::from) else {
-                            return err_env_no_var(&mut out, &file_name, line_number);
-                        };
-                        let Ok(env) = std::env::var(&var) else {
-                            return err_env_not_set(&mut out, &file_name, line_number, &var);
-                        };
+                        if !list {
+                            let Some(mut var) = words.next().map(String::from) else {
+                                return err_env_no_var(&mut out, &file_name, line_number);
+                            };
+                            let Ok(env) = std::env::var(&var) else {
+                                return err_env_not_set(&mut out, &file_name, line_number, &var);
+                            };
 
-                        // Capture variables must be formatted as `<VAR_NAME>` for insertion
-                        var.insert(0, '<');
-                        var.push('>');
-                        vars.insert(var.to_string(), env);
+                            // Capture variables must be formatted as `<VAR_NAME>` for insertion
+                            var.insert(0, '<');
+                            var.push('>');
+                            vars.insert(var.to_string(), env);
+                        }
                     }
                     Some("ignore") => {
                         ignore_cmd = true;
@@ -124,6 +130,14 @@ fn main() -> std::io::Result<()> {
                 if lang != "bash" && lang != "sh" || ignore_cmd {
                     ignored(&mut out, &file_name, line_number, &program_and_args, debug)?;
                     ignore_cmd = false;
+                    line.clear();
+                    cmd.clear();
+                    line_number = line_number_code + 1;
+                    continue;
+                }
+
+                if list {
+                    listed(&mut out, &file_name, line_number, &program_and_args, debug)?;
                     line.clear();
                     cmd.clear();
                     line_number = line_number_code + 1;

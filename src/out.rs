@@ -27,6 +27,29 @@ pub fn success(
     Ok(())
 }
 
+pub fn listed(
+    out: &mut impl std::io::Write,
+    file_name: &str,
+    line_number: usize,
+    program_and_args: &str,
+    debug: bool,
+) -> std::io::Result<()> {
+    write!(
+        out,
+        "\
+            {YELLOW}╭[    {RESET}{BOLD}{file_name}{RESET}: \
+            code block at line {line_number} - \
+            {YELLOW}ACTIVE{RESET}\n\
+        "
+    )?;
+
+    if debug {
+        log_program(out, program_and_args, true, YELLOW)?;
+    }
+
+    Ok(())
+}
+
 pub fn ignored(
     out: &mut impl std::io::Write,
     file_name: &str,
@@ -96,7 +119,7 @@ pub fn err_env_not_set(
     var: &str,
 ) -> std::io::Result<()> {
     err_line_directive(out, file_name, line_number, "env")?;
-    write!(out, "{RED}Variable was not set:{RESET} {var}\n")
+    write!(out, "{RED}Variable was not set:{RESET} {ITALIC}{var}{RESET}\n")
 }
 
 pub fn err_extract_pattern(
