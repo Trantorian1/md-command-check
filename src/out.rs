@@ -37,7 +37,7 @@ pub fn ignored(
     write!(
         out,
         "\
-            ╭[   {BOLD}{file_name}{RESET}: \
+            ╭[    {BOLD}{file_name}{RESET}: \
             code block at line {line_number} - \
             {FAINT}{ITALIC}IGNORED{RESET}\n\
         "
