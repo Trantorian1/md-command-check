@@ -110,13 +110,13 @@ fn main() -> std::io::Result<()> {
 
                 line.clear();
 
-                while read_line_sanitized(&mut buff, &mut line)? != 0 && !line.starts_with("```") {
+                while read_line_sanitized_cmd(&mut buff, &mut line)? != 0 && !line.trim().starts_with("```") {
                     line_number_code += 1;
                     cmd.push_str(&line);
                     line.clear();
                 }
 
-                if line != "```\n" {
+                if line.trim() != "```" {
                     return err_block_close(&mut out, &file_name, line_number, &line);
                 }
 
@@ -222,5 +222,11 @@ fn main() -> std::io::Result<()> {
 fn read_line_sanitized(buff: &mut impl std::io::BufRead, line: &mut String) -> std::io::Result<usize> {
     let n = buff.read_line(line)?;
     *line = line.strip_prefix('>').unwrap_or(&line).trim_start().to_string();
+    Ok(n)
+}
+
+fn read_line_sanitized_cmd(buff: &mut impl std::io::BufRead, line: &mut String) -> std::io::Result<usize> {
+    let n = buff.read_line(line)?;
+    *line = line.strip_prefix('>').unwrap_or(&line).to_string();
     Ok(n)
 }
