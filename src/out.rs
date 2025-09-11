@@ -84,6 +84,21 @@ pub fn err_extract_no_var(out: &mut impl std::io::Write, file_name: &str, line_n
     write!(out, "{RED}No variable name{RESET}\n")
 }
 
+pub fn err_env_no_var(out: &mut impl std::io::Write, file_name: &str, line_number: usize) -> std::io::Result<()> {
+    err_line_directive(out, file_name, line_number, "env")?;
+    write!(out, "{RED}No variable name{RESET}\n")
+}
+
+pub fn err_env_not_set(
+    out: &mut impl std::io::Write,
+    file_name: &str,
+    line_number: usize,
+    var: &str,
+) -> std::io::Result<()> {
+    err_line_directive(out, file_name, line_number, "env")?;
+    write!(out, "{RED}Variable was not set:{RESET} {var}\n")
+}
+
 pub fn err_extract_pattern(
     out: &mut impl std::io::Write,
     file_name: &str,

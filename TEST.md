@@ -16,6 +16,7 @@ exit 1
 echo <TIME>
 ```
 
+<!-- env MESSAGE -->
 > ```bash
-> echo hello world
+> echo <MESSAGE>
 > ```

@@ -74,6 +74,19 @@ fn main() -> std::io::Result<()> {
 
                         var_local.push((var.to_string(), re));
                     }
+                    Some("env") => {
+                        let Some(mut var) = words.next().map(String::from) else {
+                            return err_env_no_var(&mut out, &file_name, line_number);
+                        };
+                        let Ok(env) = std::env::var(&var) else {
+                            return err_env_not_set(&mut out, &file_name, line_number, &var);
+                        };
+
+                        // Capture variables must be formatted as `<VAR_NAME>` for insertion
+                        var.insert(0, '<');
+                        var.push('>');
+                        vars.insert(var.to_string(), env);
+                    }
                     Some("ignore") => {
                         ignore_cmd = true;
                     }
