@@ -12,16 +12,16 @@ pub fn success(
     write!(
         out,
         "\
-            ╭[✅ {BOLD}{file_name}{RESET}: \
+            {GREEN}╭[ ✅ {RESET}{BOLD}{file_name}{RESET}: \
             code block at line {line_number} - \
             {GREEN}PASS{RESET}\n\
         "
     )?;
 
     if debug {
-        log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty())?;
-        log_stdout(out, stdout.to_string(), stderr.is_empty())?;
-        log_stderr(out, stderr.to_string())?;
+        log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty(), GREEN)?;
+        log_stdout(out, stdout.to_string(), stderr.is_empty(), GREEN)?;
+        log_stderr(out, stderr.to_string(), GREEN)?;
     }
 
     Ok(())
@@ -44,14 +44,14 @@ pub fn ignored(
     )?;
 
     if debug {
-        log_program(out, program_and_args, true)?;
+        log_program(out, program_and_args, true, RESET)?;
     }
 
     Ok(())
 }
 
 pub fn err(out: &mut impl std::io::Write, file_name: &str) -> std::io::Result<()> {
-    write!(out, "╭[❌ {BOLD}{file_name}{RESET}: ",)
+    write!(out, "{RED}╭[ ❌ {RESET}{BOLD}{file_name}{RESET}: ",)
 }
 
 pub fn err_line_directive(
@@ -147,9 +147,9 @@ pub fn err_cmd_failure(
     let stdout = String::from_utf8_lossy(&stdout).replace("\n", "\n>> ");
     let stderr = String::from_utf8_lossy(&stderr).replace("\n", "\n>> ");
 
-    log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty())?;
-    log_stdout(out, stdout.to_string(), stderr.is_empty())?;
-    log_stderr(out, stderr.to_string())?;
+    log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty(), RED)?;
+    log_stdout(out, stdout.to_string(), stderr.is_empty(), RED)?;
+    log_stderr(out, stderr.to_string(), RED)?;
 
     Ok(())
 }
@@ -166,60 +166,63 @@ pub fn err_cmd_capture(
     err_line_code(out, file_name, line_number)?;
     write!(out, "{RED}Failed to capture matches:{RESET} {ITALIC}\"{re}\"{RESET}\n",)?;
 
-    log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty())?;
-    log_stdout(out, stdout.to_string(), stderr.is_empty())?;
-    log_stderr(out, stderr.to_string())?;
+    log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty(), RED)?;
+    log_stdout(out, stdout.to_string(), stderr.is_empty(), RED)?;
+    log_stderr(out, stderr.to_string(), RED)?;
 
     return Ok(());
 }
 
-fn log_program(out: &mut impl std::io::Write, program_and_args: &str, terminate: bool) -> std::io::Result<()> {
-    let program_and_args = program_and_args.to_string().replace("\n", "\n│ ");
+fn log_program(
+    out: &mut impl std::io::Write,
+    program_and_args: &str,
+    terminate: bool,
+    accent: &str,
+) -> std::io::Result<()> {
+    let program_and_args = program_and_args
+        .to_string()
+        .replace("\n", &format!("\n{accent}│{RESET} "));
     if !terminate {
         write!(
             out,
             "\
-                {FAINT}\
-                │ ```\n\
-                │ {program_and_args}\n\
-                │ ```\n\
-                {RESET}\
+                {accent}│{RESET} ```\n\
+                {accent}│{RESET} {program_and_args}\n\
+                {accent}│{RESET} ```\n\
             ",
         )
     } else {
         write!(
             out,
             "\
-                {FAINT}\
-                │ ```\n\
-                │ {program_and_args}\n\
-                ╰ ```\n\
-                {RESET}\
+                {accent}│{RESET} ```\n\
+                {accent}│{RESET} {program_and_args}\n\
+                {accent}╰{RESET} ```\n\
             ",
         )
     }
 }
 
-fn log_stdout(out: &mut impl std::io::Write, mut stdout: String, terminate: bool) -> std::io::Result<()> {
+fn log_stdout(out: &mut impl std::io::Write, mut stdout: String, terminate: bool, accent: &str) -> std::io::Result<()> {
     if !stdout.is_empty() {
-        stdout = stdout.trim().replace("\n", "\n│ >>");
+        stdout = stdout.trim().replace("\n", &format!("\n{accent}│{RESET} >>"));
         if !terminate {
             write!(
                 out,
                 "\
-                    │ >> {BOLD}{ITALIC}stdout{RESET}\n\
-                    │ >>\n\
-                    │ >> {stdout}\n\
+                    {accent}│{RESET} >> {BOLD}{ITALIC}stdout{RESET}\n\
+                    {accent}│{RESET} >>\n\
+                    {accent}│{RESET} >> {stdout}\n\
                 ",
             )?;
         } else {
             write!(
                 out,
                 "\
-                    │ >> {BOLD}{ITALIC}stdout{RESET}\n\
-                    │ >>\n\
-                    │ >> {stdout}\n\
-                    ╰ >>\n\
+                    {accent}│{RESET} >> {BOLD}{ITALIC}stdout{RESET}\n\
+                    {accent}│{RESET} >>\n\
+                    {accent}│{RESET} >> {stdout}\n\
+                    {accent}╰{RESET} >>\n\
                 ",
             )?;
         }
@@ -228,16 +231,16 @@ fn log_stdout(out: &mut impl std::io::Write, mut stdout: String, terminate: bool
     Ok(())
 }
 
-fn log_stderr(out: &mut impl std::io::Write, mut stderr: String) -> std::io::Result<()> {
+fn log_stderr(out: &mut impl std::io::Write, mut stderr: String, accent: &str) -> std::io::Result<()> {
     if !stderr.is_empty() {
-        stderr = stderr.trim().replace("\n", "\n│ >>");
+        stderr = stderr.trim().replace("\n", &format!("\n{accent}│{RESET} >>"));
         write!(
             out,
             "\
-                │ >> {BOLD}{ITALIC}stderr{RESET}\n\
-                │ >>\n\
-                │ >> {stderr}\n\
-                ╰ >>\n\
+                {accent}│{RESET} >> {BOLD}{ITALIC}stderr{RESET}\n\
+                {accent}│{RESET} >>\n\
+                {accent}│{RESET} >> {stderr}\n\
+                {accent}╰{RESET} >>\n\
             ",
         )?;
     }
