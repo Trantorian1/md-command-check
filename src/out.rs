@@ -252,6 +252,7 @@ fn log_stdout(out: &mut impl std::io::Write, mut stdout: String, terminate: bool
                     {accent}│{RESET} >> {BOLD}{ITALIC}stdout{RESET}\n\
                     {accent}│{RESET} >>\n\
                     {accent}│{RESET} >> {stdout}\n\
+                    {accent}╰{RESET} >>\n\
                 ",
             )?;
         } else {

@@ -1,28 +1,11 @@
-<!-- extract TIME "Finished.*in (.*)" -->
 ```bash
-cargo check
-```
-
-```rs
-println!("test");
-```
-
-<!-- ignore -->
-```bash
-exit 1
+ls
 ```
 
 ```bash
-echo <TIME>
-echo "Hello World"
+cd target
 ```
 
-<!-- env MESSAGE -->
-> ```bash
-> echo <MESSAGE>
-> ```
-
-<!-- ignore -->
-> ```bash
-> exit 1
-> ```
+```bash
+ls
+```

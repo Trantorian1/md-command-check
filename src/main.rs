@@ -1,6 +1,8 @@
 mod colors;
 mod out;
 
+use std::io::{BufRead as _, Write};
+
 use out::*;
 
 fn main() -> std::io::Result<()> {
@@ -27,6 +29,17 @@ fn main() -> std::io::Result<()> {
 
     // buffered  output
     let mut out = std::io::BufWriter::new(std::io::stdout());
+
+    // Command
+    let mut shell = std::process::Command::new("sh")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let cmd_stdin = shell.stdin.take().unwrap();
+    let mut cmd_stdout = std::io::BufReader::new(shell.stdout.take().unwrap());
+    let mut cmd_stderr = std::io::BufReader::new(shell.stderr.take().unwrap());
 
     while let Some(file_name) = args.next() {
         let path = std::path::PathBuf::from(&file_name);
@@ -121,7 +134,6 @@ fn main() -> std::io::Result<()> {
                 }
 
                 // Creates commands and interpolates any known capture variables
-                let mut process = std::process::Command::new(&lang);
                 let mut program_and_args = cmd.to_string();
                 for (var, val) in vars.iter() {
                     program_and_args = program_and_args.replace(var, val.as_ref());
@@ -146,35 +158,52 @@ fn main() -> std::io::Result<()> {
 
                 // Commands are run in the specified shell.
                 // Currently, only `bash` and `sh` are supported.
-                process
-                    .arg("-c")
-                    .arg(&program_and_args)
-                    .stdin(std::process::Stdio::null());
+                writeln!(
+                    &cmd_stdin,
+                    "{}; echo :CMDEND 1>&2; echo \"$?:CMDEND\"",
+                    program_and_args.trim_end()
+                )?;
 
-                let Ok(output) = process.output() else {
-                    return err_cmd_spawn(&mut out, &file_name, line_number, &program_and_args);
-                };
+                // let Ok(output) = process.output() else {
+                //     return err_cmd_spawn(&mut out, &file_name, line_number, &program_and_args);
+                // };
+                //
+                // if !output.status.success() {
+                //     return err_cmd_failure(
+                //         &mut out,
+                //         &file_name,
+                //         line_number,
+                //         &program_and_args,
+                //         &output.stdout,
+                //         &output.stderr,
+                //     );
+                // }
 
-                if !output.status.success() {
-                    return err_cmd_failure(
-                        &mut out,
-                        &file_name,
-                        line_number,
-                        &program_and_args,
-                        &output.stdout,
-                        &output.stderr,
-                    );
+                let mut stdout = String::with_capacity(256);
+                let mut stderr = String::with_capacity(256);
+
+                while !stdout.ends_with(":CMDEND\n") {
+                    cmd_stdout.read_line(&mut stdout)?;
                 }
 
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
+                let re = regex::Regex::new(r#"(\d+):CMDEND"#).unwrap();
+                let code = re.captures(&stdout).unwrap().get(1).unwrap().as_str();
+
+                let stdout = stdout.trim_end_matches(":CMDEND\n");
+                let stdout = stdout.trim_end_matches(code);
+
+                while !stderr.ends_with(":CMDEND\n") {
+                    cmd_stderr.read_line(&mut stderr)?;
+                }
+
+                let stderr = stderr.trim_end_matches(":CMDEND\n");
 
                 // Looks for capture variables in the output of the command.
                 // By default we look for captures in `stdout`. If none are found we look in
                 // `stderr`. If no capture is found this counts as an error.
                 for (mut var, re) in var_local {
                     let Some(cap) = re
-                        .captures(&stdout)
+                        .captures(stdout)
                         .or_else(|| re.captures(&stderr))
                         .and_then(|cap| cap.get(1))
                         .map(|cap| cap.as_str().to_string())
@@ -208,6 +237,7 @@ fn main() -> std::io::Result<()> {
                     debug,
                 )?;
 
+                out.flush()?;
                 cmd.clear();
                 line_number = line_number_code + 1;
             }
@@ -215,6 +245,8 @@ fn main() -> std::io::Result<()> {
             line.clear();
         }
     }
+
+    shell.kill()?;
 
     Ok(())
 }
