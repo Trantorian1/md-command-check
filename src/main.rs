@@ -135,6 +135,13 @@ fn main() -> Result<(), Error> {
                     return Ok(());
                 }
 
+                if shell != "bash" && shell != "sh" {
+                    line.clear();
+                    cmd.clear();
+                    line_number += line_number_code;
+                    continue;
+                }
+
                 let mut process = std::process::Command::new(shell);
                 let mut program_and_args = cmd[..cmd.len() - 1].to_string();
                 for (var, val) in vars.iter() {

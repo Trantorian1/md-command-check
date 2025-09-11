@@ -3,6 +3,10 @@
 cargo check
 ```
 
+```rs
+println!("test");
+```
+
 ```bash
 echo <TIME>
 ```
