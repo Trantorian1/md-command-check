@@ -160,50 +160,21 @@ fn main() -> std::io::Result<()> {
                 // Currently, only `bash` and `sh` are supported.
                 writeln!(
                     &cmd_stdin,
-                    "{}; echo :CMDEND 1>&2; echo \"$?:CMDEND\"",
+                    "{}; echo \"$?:CMDEND\"; echo :CMDEND 1>&2",
                     program_and_args.trim_end()
                 )?;
 
-                // let Ok(output) = process.output() else {
-                //     return err_cmd_spawn(&mut out, &file_name, line_number, &program_and_args);
-                // };
-                //
-                // if !output.status.success() {
-                //     return err_cmd_failure(
-                //         &mut out,
-                //         &file_name,
-                //         line_number,
-                //         &program_and_args,
-                //         &output.stdout,
-                //         &output.stderr,
-                //     );
-                // }
-
-                let mut stdout = String::with_capacity(256);
-                let mut stderr = String::with_capacity(256);
-
-                while !stdout.ends_with(":CMDEND\n") {
-                    cmd_stdout.read_line(&mut stdout)?;
+                let (stdout, stderr, code) = cmd_info(&mut shell, &mut cmd_stdout, &mut cmd_stderr)?;
+                if code != 0 {
+                    return err_cmd_failure(&mut out, &file_name, line_number, &program_and_args, &stdout, &stderr);
                 }
-
-                let re = regex::Regex::new(r#"(\d+):CMDEND"#).unwrap();
-                let code = re.captures(&stdout).unwrap().get(1).unwrap().as_str();
-
-                let stdout = stdout.trim_end_matches(":CMDEND\n");
-                let stdout = stdout.trim_end_matches(code);
-
-                while !stderr.ends_with(":CMDEND\n") {
-                    cmd_stderr.read_line(&mut stderr)?;
-                }
-
-                let stderr = stderr.trim_end_matches(":CMDEND\n");
 
                 // Looks for capture variables in the output of the command.
                 // By default we look for captures in `stdout`. If none are found we look in
                 // `stderr`. If no capture is found this counts as an error.
                 for (mut var, re) in var_local {
                     let Some(cap) = re
-                        .captures(stdout)
+                        .captures(&stdout)
                         .or_else(|| re.captures(&stderr))
                         .and_then(|cap| cap.get(1))
                         .map(|cap| cap.as_str().to_string())
@@ -261,4 +232,43 @@ fn read_line_sanitized_cmd(buff: &mut impl std::io::BufRead, line: &mut String) 
     let n = buff.read_line(line)?;
     *line = line.strip_prefix('>').unwrap_or(&line).to_string();
     Ok(n)
+}
+
+fn cmd_info(
+    shell: &mut std::process::Child,
+    cmd_stdout: &mut impl std::io::BufRead,
+    cmd_stderr: &mut impl std::io::BufRead,
+) -> std::io::Result<(String, String, i32)> {
+    let mut stdout = String::with_capacity(256);
+    let mut stderr = String::with_capacity(256);
+    let code;
+
+    while !stdout.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
+        cmd_stdout.read_line(&mut stdout)?;
+    }
+
+    while !stderr.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
+        cmd_stderr.read_line(&mut stderr)?;
+    }
+
+    match shell.try_wait()? {
+        Some(code_raw) => {
+            code = code_raw.code().unwrap();
+        }
+        None => {
+            let re = regex::Regex::new(r#"(\d+):CMDEND"#).unwrap();
+            let code_raw = re.captures(&stdout).unwrap().get(1).unwrap().as_str();
+
+            code = code_raw.parse::<i32>().unwrap();
+
+            stdout = stdout
+                .trim_end_matches(":CMDEND\n")
+                .trim_end_matches(code_raw)
+                .to_string();
+
+            stderr = stderr.trim_end_matches(":CMDEND\n").to_string();
+        }
+    }
+
+    Ok((stdout, stderr, code))
 }

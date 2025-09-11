@@ -176,14 +176,11 @@ pub fn err_cmd_failure(
     file_name: &str,
     line_number: usize,
     program_and_args: &str,
-    stdout: &[u8],
-    stderr: &[u8],
+    stdout: &str,
+    stderr: &str,
 ) -> std::io::Result<()> {
     err_line_code(out, file_name, line_number)?;
     write!(out, "{RED}FAIL{RESET}\n",)?;
-
-    let stdout = String::from_utf8_lossy(&stdout).replace("\n", "\n>> ");
-    let stderr = String::from_utf8_lossy(&stderr).replace("\n", "\n>> ");
 
     log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty(), RED)?;
     log_stdout(out, stdout.to_string(), stderr.is_empty(), RED)?;
