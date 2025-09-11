@@ -1,29 +1,57 @@
 use crate::colors::*;
 
-pub fn success(out: &mut impl std::io::Write, file_name: &str, line_number: usize) -> std::io::Result<()> {
+pub fn success(
+    out: &mut impl std::io::Write,
+    file_name: &str,
+    line_number: usize,
+    program_and_args: &str,
+    stdout: &str,
+    stderr: &str,
+    debug: bool,
+) -> std::io::Result<()> {
     write!(
         out,
         "\
-            ✅{BOLD}{file_name}{RESET}: \
+            ╭[✅ {BOLD}{file_name}{RESET}: \
             code block at line {line_number} - \
             {GREEN}PASS{RESET}\n\
         "
-    )
+    )?;
+
+    if debug {
+        log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty())?;
+        log_stdout(out, stdout.to_string(), stderr.is_empty())?;
+        log_stderr(out, stderr.to_string())?;
+    }
+
+    Ok(())
 }
 
-pub fn ignored(out: &mut impl std::io::Write, file_name: &str, line_number: usize) -> std::io::Result<()> {
+pub fn ignored(
+    out: &mut impl std::io::Write,
+    file_name: &str,
+    line_number: usize,
+    program_and_args: &str,
+    debug: bool,
+) -> std::io::Result<()> {
     write!(
         out,
-        "  \
-            {BOLD}{file_name}{RESET}: \
+        "\
+            ╭[   {BOLD}{file_name}{RESET}: \
             code block at line {line_number} - \
             {FAINT}{ITALIC}IGNORED{RESET}\n\
         "
-    )
+    )?;
+
+    if debug {
+        log_program(out, program_and_args, true)?;
+    }
+
+    Ok(())
 }
 
 pub fn err(out: &mut impl std::io::Write, file_name: &str) -> std::io::Result<()> {
-    write!(out, "❌{BOLD}{file_name}{RESET}: ",)
+    write!(out, "╭[❌ {BOLD}{file_name}{RESET}: ",)
 }
 
 pub fn err_line_directive(
@@ -114,45 +142,14 @@ pub fn err_cmd_failure(
     stderr: &[u8],
 ) -> std::io::Result<()> {
     err_line_code(out, file_name, line_number)?;
-    write!(
-        out,
-        "\
-            {RED}FAIL{RESET}\n\
-            {FAINT}\
-            ```\n\
-            {program_and_args}\n\
-            ```\n\
-            {RESET}\
-        ",
-    )?;
+    write!(out, "{RED}FAIL{RESET}\n",)?;
 
-    if !stdout.is_empty() {
-        let mut stdout = String::from_utf8_lossy(&stdout[..stdout.len() - 1]).replace("\n", "\n>> ");
-        stdout.insert_str(0, ">> ");
-        write!(
-            out,
-            "\
-            >> {BOLD}{ITALIC}stdout{RESET}\n\
-            >>\n\
-            {stdout}\n\
-            >>\n\
-        ",
-        )?;
-    }
+    let stdout = String::from_utf8_lossy(&stdout).replace("\n", "\n>> ");
+    let stderr = String::from_utf8_lossy(&stderr).replace("\n", "\n>> ");
 
-    if !stderr.is_empty() {
-        let mut stderr = String::from_utf8_lossy(&stderr[..stderr.len() - 1]).replace("\n", "\n>> ");
-        stderr.insert_str(0, ">> ");
-        write!(
-            out,
-            "\
-            >> {BOLD}{ITALIC}stderr{RESET}\n\
-            >>\n\
-            {stderr}\n\
-            >>\n\
-        ",
-        )?;
-    }
+    log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty())?;
+    log_stdout(out, stdout.to_string(), stderr.is_empty())?;
+    log_stderr(out, stderr.to_string())?;
 
     Ok(())
 }
@@ -167,45 +164,83 @@ pub fn err_cmd_capture(
     re: &regex::Regex,
 ) -> std::io::Result<()> {
     err_line_code(out, file_name, line_number)?;
-    write!(
-        out,
-        "\
-            {RED}Failed to capture matches:{RESET} {ITALIC}\"{re}\"{RESET}\n\
-            {FAINT}\
-            ```\n\
-            {program_and_args}\n\
-            ```\n\
-            {RESET}\
-        ",
-    )?;
+    write!(out, "{RED}Failed to capture matches:{RESET} {ITALIC}\"{re}\"{RESET}\n",)?;
 
-    if !stdout.is_empty() {
-        let mut stdout = stdout.replace("\n", "\n>> ");
-        stdout.insert_str(0, ">> ");
-        write!(
-            out,
-            "\
-            >> {BOLD}{ITALIC}stdout{RESET}\n\
-            >>\n\
-            {stdout}\n\
-            >>\n\
-        ",
-        )?;
-    }
-
-    if !stderr.is_empty() {
-        let mut stderr = stderr.replace("\n", "\n>> ");
-        stderr.insert_str(0, ">> ");
-        write!(
-            out,
-            "\
-            >> {BOLD}{ITALIC}stderr{RESET}\n\
-            >>\n\
-            {stderr}\n\
-            >>\n\
-        ",
-        )?;
-    }
+    log_program(out, program_and_args, stdout.is_empty() && stderr.is_empty())?;
+    log_stdout(out, stdout.to_string(), stderr.is_empty())?;
+    log_stderr(out, stderr.to_string())?;
 
     return Ok(());
+}
+
+fn log_program(out: &mut impl std::io::Write, program_and_args: &str, terminate: bool) -> std::io::Result<()> {
+    let program_and_args = program_and_args.to_string().replace("\n", "\n│ ");
+    if !terminate {
+        write!(
+            out,
+            "\
+                {FAINT}\
+                │ ```\n\
+                │ {program_and_args}\n\
+                │ ```\n\
+                {RESET}\
+            ",
+        )
+    } else {
+        write!(
+            out,
+            "\
+                {FAINT}\
+                │ ```\n\
+                │ {program_and_args}\n\
+                ╰ ```\n\
+                {RESET}\
+            ",
+        )
+    }
+}
+
+fn log_stdout(out: &mut impl std::io::Write, mut stdout: String, terminate: bool) -> std::io::Result<()> {
+    if !stdout.is_empty() {
+        stdout = stdout.trim().replace("\n", "\n│ >>");
+        if !terminate {
+            write!(
+                out,
+                "\
+                    │ >> {BOLD}{ITALIC}stdout{RESET}\n\
+                    │ >>\n\
+                    │ >> {stdout}\n\
+                ",
+            )?;
+        } else {
+            write!(
+                out,
+                "\
+                    │ >> {BOLD}{ITALIC}stdout{RESET}\n\
+                    │ >>\n\
+                    │ >> {stdout}\n\
+                    ╰ >>\n\
+                ",
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn log_stderr(out: &mut impl std::io::Write, mut stderr: String) -> std::io::Result<()> {
+    if !stderr.is_empty() {
+        stderr = stderr.trim().replace("\n", "\n│ >>");
+        write!(
+            out,
+            "\
+                │ >> {BOLD}{ITALIC}stderr{RESET}\n\
+                │ >>\n\
+                │ >> {stderr}\n\
+                ╰ >>\n\
+            ",
+        )?;
+    }
+
+    Ok(())
 }

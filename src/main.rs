@@ -1,12 +1,22 @@
 use std::io::BufRead;
 
 mod colors;
-mod errors;
+mod out;
 
-use errors::*;
+use out::*;
 
 fn main() -> std::io::Result<()> {
-    let mut files = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1).peekable();
+
+    // options
+    let mut debug = false;
+
+    while args.peek().is_some_and(|arg| arg.starts_with("--")) {
+        match args.next().expect("Checked above").as_ref() {
+            "--debug" => debug = true,
+            _ => {}
+        }
+    }
 
     // buffers
     let mut line = String::with_capacity(256);
@@ -18,7 +28,7 @@ fn main() -> std::io::Result<()> {
     // buffered  output
     let mut out = std::io::BufWriter::new(std::io::stdout());
 
-    while let Some(file_name) = files.next() {
+    while let Some(file_name) = args.next() {
         let path = std::path::PathBuf::from(&file_name);
         if !path.extension().is_some_and(|ext| ext == "md") {
             return err_file_ext(&mut out, &file_name);
@@ -95,20 +105,20 @@ fn main() -> std::io::Result<()> {
                     return err_block_close(&mut out, &file_name, line_number, delimiter);
                 }
 
+                // Creates commands and interpolates any known capture variables
+                let mut process = std::process::Command::new(&lang);
+                let mut program_and_args = cmd[..cmd.len() - 1].to_string();
+                for (var, val) in vars.iter() {
+                    program_and_args = program_and_args.replace(var, val.as_ref());
+                }
+
                 if lang != "bash" && lang != "sh" || ignore_cmd {
-                    ignored(&mut out, &file_name, line_number)?;
+                    ignored(&mut out, &file_name, line_number, &program_and_args, debug)?;
                     ignore_cmd = false;
                     line.clear();
                     cmd.clear();
                     line_number = line_number_code + 1;
                     continue;
-                }
-
-                // Creates commands and interpolates any known capture variables
-                let mut process = std::process::Command::new(lang);
-                let mut program_and_args = cmd[..cmd.len() - 1].to_string();
-                for (var, val) in vars.iter() {
-                    program_and_args = program_and_args.replace(var, val.as_ref());
                 }
 
                 // Commands are run in the specified shell.
@@ -165,7 +175,15 @@ fn main() -> std::io::Result<()> {
                 }
                 var_local = Vec::with_capacity(8);
 
-                success(&mut out, &file_name, line_number)?;
+                success(
+                    &mut out,
+                    &file_name,
+                    line_number,
+                    &program_and_args,
+                    &stdout,
+                    &stderr,
+                    debug,
+                )?;
 
                 cmd.clear();
                 line_number = line_number_code + 1;
