@@ -1,5 +1,5 @@
 ```bash
-echo one; echo one 1>&2
+echo "abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz1234567890"; echo one 1>&2
 sleep 1
 echo two; echo two 1>&2
 sleep 1

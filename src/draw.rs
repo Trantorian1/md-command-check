@@ -26,6 +26,8 @@ pub fn draw(
     let mut stderr = String::with_capacity(256);
     let code;
 
+    write!(out, "{WRAP_DISABLE}")?;
+
     line_count += draw_file_info(out, Status::Running, file_name, line_number)?;
     line_count += draw_code(out, Status::Running, lang, program_and_args, false)?;
     line_count += draw_output(out, Status::Running, &stdout, "stdout", true)?;
@@ -83,6 +85,8 @@ pub fn draw(
         draw_output(out, status, &stdout, "sdtout", false)?;
         draw_output(out, status, &stderr, "sdterr", true)?;
     }
+
+    write!(out, "{WRAP_ENABLE}")?;
     flush(out)?;
 
     Ok((stdout, stderr))
