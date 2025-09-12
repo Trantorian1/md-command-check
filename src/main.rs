@@ -1,8 +1,10 @@
 mod colors;
+mod draw;
 mod out;
 
-use std::io::{BufRead as _, Write};
+use std::io::Write;
 
+use draw::*;
 use out::*;
 
 fn main() -> std::io::Result<()> {
@@ -27,8 +29,8 @@ fn main() -> std::io::Result<()> {
     // captures variables
     let mut vars = std::collections::HashMap::<String, String>::new();
 
-    // buffered  output
-    let mut out = std::io::BufWriter::new(std::io::stdout());
+    // manual output
+    let mut out = Vec::with_capacity(8192); // 8kb
 
     // Command
     let mut shell = std::process::Command::new("sh")
@@ -96,8 +98,11 @@ fn main() -> std::io::Result<()> {
                             let Some(mut var) = words.next().map(String::from) else {
                                 return err_env_no_var(&mut out, &file_name, line_number);
                             };
-                            let Ok(env) = std::env::var(&var) else {
-                                return err_env_not_set(&mut out, &file_name, line_number, &var);
+                            let Some(key) = words.next().map(String::from) else {
+                                return err_env_no_var(&mut out, &file_name, line_number);
+                            };
+                            let Ok(env) = std::env::var(&key) else {
+                                return err_env_not_set(&mut out, &file_name, line_number, &key);
                             };
 
                             // Capture variables must be formatted as `<VAR_NAME>` for insertion
@@ -142,6 +147,7 @@ fn main() -> std::io::Result<()> {
                 if lang != "bash" && lang != "sh" || ignore_cmd {
                     ignored(&mut out, &file_name, line_number, &program_and_args, debug)?;
                     ignore_cmd = false;
+                    out.flush()?;
                     line.clear();
                     cmd.clear();
                     line_number = line_number_code + 1;
@@ -164,10 +170,20 @@ fn main() -> std::io::Result<()> {
                     program_and_args.trim_end()
                 )?;
 
-                let (stdout, stderr, code) = cmd_info(&mut shell, &mut cmd_stdout, &mut cmd_stderr)?;
-                if code != 0 {
-                    return err_cmd_failure(&mut out, &file_name, line_number, &program_and_args, &stdout, &stderr);
-                }
+                let (stdout, stderr) = draw(
+                    &mut out,
+                    &mut shell,
+                    &file_name,
+                    line_number,
+                    &lang,
+                    &program_and_args,
+                    &mut cmd_stdout,
+                    &mut cmd_stderr,
+                    debug,
+                )?;
+                // if code != 0 {
+                //     return err_cmd_failure(&mut out, &file_name, line_number, &program_and_args, &stdout, &stderr);
+                // }
 
                 // Looks for capture variables in the output of the command.
                 // By default we look for captures in `stdout`. If none are found we look in
@@ -198,15 +214,15 @@ fn main() -> std::io::Result<()> {
                 }
                 var_local = Vec::with_capacity(8);
 
-                success(
-                    &mut out,
-                    &file_name,
-                    line_number,
-                    &program_and_args,
-                    &stdout,
-                    &stderr,
-                    debug,
-                )?;
+                // success(
+                //     &mut out,
+                //     &file_name,
+                //     line_number,
+                //     &program_and_args,
+                //     &stdout,
+                //     &stderr,
+                //     debug,
+                // )?;
 
                 out.flush()?;
                 cmd.clear();
@@ -239,12 +255,16 @@ fn cmd_info(
     cmd_stdout: &mut impl std::io::BufRead,
     cmd_stderr: &mut impl std::io::BufRead,
 ) -> std::io::Result<(String, String, i32)> {
+    let mut line = String::with_capacity(256);
     let mut stdout = String::with_capacity(256);
     let mut stderr = String::with_capacity(256);
     let code;
 
     while !stdout.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
-        cmd_stdout.read_line(&mut stdout)?;
+        cmd_stdout.read_line(&mut line)?;
+        print!("{line}");
+        stdout.push_str(&line);
+        line.clear();
     }
 
     while !stderr.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {

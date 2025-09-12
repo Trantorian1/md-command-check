@@ -1,13 +1,18 @@
 ```bash
-ls
+echo one; echo one 1>&2
+sleep 1
+echo two; echo two 1>&2
+sleep 1
+echo three; echo three 1>&2
 ```
 
-```bash
-cd target
-```
 
 ```bash
-ls
+echo one
+sleep 1
+echo two
+sleep 1
+echo three
 ```
 
 ```bash

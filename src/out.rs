@@ -151,26 +151,6 @@ pub fn err_block_close(
     }
 }
 
-pub fn err_cmd_spawn(
-    out: &mut impl std::io::Write,
-    file_name: &str,
-    line_number: usize,
-    program_and_args: &str,
-) -> std::io::Result<()> {
-    err_line_code(out, file_name, line_number)?;
-    write!(
-        out,
-        "\
-            {RED}Could not run command{RESET}\n\
-            {FAINT}\
-            ```\n\
-            {program_and_args}\n\
-            ```\n\
-            {RESET}\
-        ",
-    )
-}
-
 pub fn err_cmd_failure(
     out: &mut impl std::io::Write,
     file_name: &str,
