@@ -78,6 +78,19 @@ pub fn err_env_not_set(file_name: &str, line_number: usize, var: &str) -> std::i
     )
 }
 
+pub fn err_alias_no_var(file_name: &str, line_number: usize) -> std::io::Result<()> {
+    err_line_directive(file_name, line_number, "alias")?;
+    write!(std::io::stdout(), "{RED}No variable name{RESET}\n")
+}
+
+pub fn err_alias_not_captured(file_name: &str, line_number: usize, var: &str) -> std::io::Result<()> {
+    err_line_directive(file_name, line_number, "alias")?;
+    write!(
+        std::io::stdout(),
+        "{RED}Variable has not been previously captured:{RESET} {ITALIC}{var}{RESET}\n"
+    )
+}
+
 pub fn err_extract_pattern(file_name: &str, line_number: usize, pat: &str) -> std::io::Result<()> {
     err_line_directive(file_name, line_number, "extract")?;
     write!(std::io::stdout(), "{RED}Invalid pattern:{RESET}{pat}\n")

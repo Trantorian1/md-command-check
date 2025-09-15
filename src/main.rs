@@ -70,7 +70,11 @@ fn main() -> std::io::Result<()> {
                 // ============================================================================== //
                 //                              DIRECTIVE EXTRACTION                              //
                 // ============================================================================== //
-                let mut words = line.split_whitespace().skip(1);
+
+                let mut words = line
+                    .trim_start_matches("<!--")
+                    .trim_end_matches("-->\n")
+                    .split_whitespace();
                 match words.next() {
                     Some("extract") => {
                         if !list {
@@ -113,6 +117,27 @@ fn main() -> std::io::Result<()> {
                             var.insert(0, '<');
                             var.push('>');
                             vars.insert(var.to_string(), env);
+                        }
+                    }
+                    Some("alias") => {
+                        if !list {
+                            let Some(mut var) = words.next().map(String::from) else {
+                                return err_alias_no_var(&file_name, line_number);
+                            };
+
+                            var.insert(0, '<');
+                            var.push('>');
+
+                            let Some(mut alias) = words.next().map(String::from) else {
+                                return err_alias_no_var(&file_name, line_number);
+                            };
+                            let Some(val) = vars.get(&var).map(String::from) else {
+                                return err_alias_not_captured(&file_name, line_number, &var);
+                            };
+
+                            alias.insert(0, '<');
+                            alias.push('>');
+                            vars.insert(alias, val);
                         }
                     }
                     Some("ignore") => {
