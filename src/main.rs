@@ -1,11 +1,12 @@
 mod colors;
 mod draw;
-mod out;
+mod err;
 
-use std::io::Write;
+use std::io::{BufRead as _, Write};
 
+use colors::*;
 use draw::*;
-use out::*;
+use err::*;
 
 fn main() -> std::io::Result<()> {
     let mut args = std::env::args().skip(1).peekable();
@@ -22,17 +23,17 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    // buffers
+    // readline buffers
     let mut line = String::with_capacity(256);
     let mut cmd = String::with_capacity(256);
 
-    // captures variables
+    // capture variables
     let mut vars = std::collections::HashMap::<String, String>::new();
 
     // manual output
     let mut out = Vec::with_capacity(8192); // 8kb
 
-    // Command
+    // Long-running shell process. We spawn our commands in here
     let mut shell = std::process::Command::new("sh")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -46,11 +47,11 @@ fn main() -> std::io::Result<()> {
     while let Some(file_name) = args.next() {
         let path = std::path::PathBuf::from(&file_name);
         if !path.extension().is_some_and(|ext| ext == "md") {
-            return err_file_ext(&mut out, &file_name);
+            return err_file_ext(&file_name);
         }
 
         let Ok(file) = std::fs::File::open(path) else {
-            return err_file_open(&mut out, &file_name);
+            return err_file_open(&file_name);
         };
 
         let mut buff = std::io::BufReader::new(file);
@@ -66,12 +67,15 @@ fn main() -> std::io::Result<()> {
 
             // We've found a comment!
             if line.starts_with("<!--") {
+                // ============================================================================== //
+                //                              DIRECTIVE EXTRACTION                              //
+                // ============================================================================== //
                 let mut words = line.split_whitespace().skip(1);
                 match words.next() {
                     Some("extract") => {
                         if !list {
                             let Some(var) = words.next() else {
-                                return err_extract_no_var(&mut out, &file_name, line_number);
+                                return err_extract_no_var(&file_name, line_number);
                             };
 
                             let mut pat = String::with_capacity((line.len() - 4 - var.len()).saturating_sub(4));
@@ -87,7 +91,7 @@ fn main() -> std::io::Result<()> {
 
                             let pat = pat.trim_matches('"');
                             let Ok(re) = regex::Regex::new(pat) else {
-                                return err_extract_pattern(&mut out, &file_name, line_number, pat);
+                                return err_extract_pattern(&file_name, line_number, pat);
                             };
 
                             var_local.push((var.to_string(), re));
@@ -96,13 +100,13 @@ fn main() -> std::io::Result<()> {
                     Some("env") => {
                         if !list {
                             let Some(mut var) = words.next().map(String::from) else {
-                                return err_env_no_var(&mut out, &file_name, line_number);
+                                return err_env_no_var(&file_name, line_number);
                             };
                             let Some(key) = words.next().map(String::from) else {
-                                return err_env_no_var(&mut out, &file_name, line_number);
+                                return err_env_no_var(&file_name, line_number);
                             };
                             let Ok(env) = std::env::var(&key) else {
-                                return err_env_not_set(&mut out, &file_name, line_number, &key);
+                                return err_env_not_set(&file_name, line_number, &key);
                             };
 
                             // Capture variables must be formatted as `<VAR_NAME>` for insertion
@@ -119,11 +123,14 @@ fn main() -> std::io::Result<()> {
             }
             // We've found a code block!
             else if line.starts_with("```") {
+                // ============================================================================== //
+                //                               COMMAND EXTRACTION                               //
+                // ============================================================================== //
                 line_number_code = line_number;
                 let lang = line[3..line.len()].trim_end().to_string();
 
                 if lang.len() == 0 {
-                    return err_no_lang(&mut out, &file_name, line_number);
+                    return err_no_lang(&file_name, line_number);
                 }
 
                 line.clear();
@@ -135,7 +142,7 @@ fn main() -> std::io::Result<()> {
                 }
 
                 if line.trim() != "```" {
-                    return err_block_close(&mut out, &file_name, line_number, &line);
+                    return err_block_close(&file_name, line_number, &line);
                 }
 
                 // Creates commands and interpolates any known capture variables
@@ -145,7 +152,7 @@ fn main() -> std::io::Result<()> {
                 }
 
                 if lang != "bash" && lang != "sh" || ignore_cmd {
-                    ignored(&mut out, &file_name, line_number, &program_and_args, debug)?;
+                    ignored(&file_name, line_number, &program_and_args, debug)?;
                     ignore_cmd = false;
                     out.flush()?;
                     line.clear();
@@ -155,7 +162,13 @@ fn main() -> std::io::Result<()> {
                 }
 
                 if list {
-                    listed(&mut out, &file_name, line_number, &program_and_args, debug)?;
+                    listed(&file_name, line_number, &program_and_args, debug)?;
+
+                    let mut stdout = std::io::stdout();
+                    stdout.write_all(&out)?;
+                    out.clear();
+                    stdout.flush()?;
+
                     line.clear();
                     cmd.clear();
                     line_number = line_number_code + 1;
@@ -170,20 +183,82 @@ fn main() -> std::io::Result<()> {
                     program_and_args.trim_end()
                 )?;
 
-                let (stdout, stderr) = draw(
-                    &mut out,
-                    &mut shell,
-                    &file_name,
-                    line_number,
-                    &lang,
-                    &program_and_args,
-                    &mut cmd_stdout,
-                    &mut cmd_stderr,
-                    debug,
-                )?;
-                // if code != 0 {
-                //     return err_cmd_failure(&mut out, &file_name, line_number, &program_and_args, &stdout, &stderr);
-                // }
+                // ============================================================================== //
+                //                                  DRAW ROUTINE                                  //
+                // ============================================================================== //
+
+                let mut line_count = 0;
+
+                let mut stdout = String::with_capacity(256);
+                let mut stderr = String::with_capacity(256);
+                let code;
+
+                write!(out, "{WRAP_DISABLE}")?;
+
+                line_count += draw_file_info(&mut out, Status::Running, &file_name, line_number)?;
+                line_count += draw_code(&mut out, Status::Running, &lang, &program_and_args, false)?;
+                line_count += draw_output(&mut out, Status::Running, &stdout, "stdout", true)?;
+                flush(&mut out)?;
+
+                while !stdout.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
+                    cmd_stdout.read_line(&mut stdout)?;
+
+                    erase(&mut out, line_count)?;
+                    line_count = draw_file_info(&mut out, Status::Running, &file_name, line_number)?;
+                    line_count += draw_code(&mut out, Status::Running, &lang, &program_and_args, false)?;
+                    line_count += draw_output(&mut out, Status::Running, &stdout, "stdout", true)?;
+                    flush(&mut out)?;
+                }
+
+                while !stderr.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
+                    cmd_stderr.read_line(&mut stderr)?;
+
+                    erase(&mut out, line_count)?;
+                    line_count = draw_file_info(&mut out, Status::Running, &file_name, line_number)?;
+                    line_count += draw_code(&mut out, Status::Running, &lang, &program_and_args, false)?;
+                    line_count += draw_output(&mut out, Status::Running, &stdout, "stdout", false)?;
+                    line_count += draw_output(&mut out, Status::Running, &stderr, "stdout", true)?;
+                    flush(&mut out)?;
+                }
+
+                match shell.try_wait()? {
+                    Some(code_raw) => {
+                        code = code_raw.code().unwrap();
+                    }
+                    None => {
+                        let re = regex::Regex::new(r#"(\d+):CMDEND"#).unwrap();
+                        let code_raw = re.captures(&stdout).unwrap().get(1).unwrap().as_str();
+
+                        code = code_raw.parse::<i32>().unwrap();
+
+                        stdout = stdout
+                            .trim_end_matches(":CMDEND\n")
+                            .trim_end_matches(code_raw)
+                            .to_string();
+
+                        stderr = stderr.trim_end_matches(":CMDEND\n").to_string();
+                    }
+                }
+
+                let status = if code == 0 { Status::PASS } else { Status::FAIL };
+
+                erase(&mut out, line_count)?;
+                if !debug {
+                    draw_file_info(&mut out, status, &file_name, line_number)?;
+                    draw_code(&mut out, status, &lang, &program_and_args, true)?;
+                } else {
+                    draw_file_info(&mut out, status, &file_name, line_number)?;
+                    draw_code(&mut out, status, &lang, &program_and_args, false)?;
+                    draw_output(&mut out, status, &stdout, "sdtout", false)?;
+                    draw_output(&mut out, status, &stderr, "sdterr", true)?;
+                }
+
+                write!(out, "{WRAP_ENABLE}")?;
+                flush(&mut out)?;
+
+                // ============================================================================== //
+                //                                 OUTPUT CAPTURE                                 //
+                // ============================================================================== //
 
                 // Looks for capture variables in the output of the command.
                 // By default we look for captures in `stdout`. If none are found we look in
@@ -195,15 +270,7 @@ fn main() -> std::io::Result<()> {
                         .and_then(|cap| cap.get(1))
                         .map(|cap| cap.as_str().to_string())
                     else {
-                        return err_cmd_capture(
-                            &mut out,
-                            &file_name,
-                            line_number,
-                            &program_and_args,
-                            &stdout,
-                            &stderr,
-                            &re,
-                        );
+                        return err_cmd_capture(&file_name, line_number, &program_and_args, &stdout, &stderr, &re);
                     };
 
                     // Capture variables must be formatted as `<VAR_NAME>` for insertion
@@ -214,17 +281,6 @@ fn main() -> std::io::Result<()> {
                 }
                 var_local = Vec::with_capacity(8);
 
-                // success(
-                //     &mut out,
-                //     &file_name,
-                //     line_number,
-                //     &program_and_args,
-                //     &stdout,
-                //     &stderr,
-                //     debug,
-                // )?;
-
-                out.flush()?;
                 cmd.clear();
                 line_number = line_number_code + 1;
             }
@@ -248,47 +304,4 @@ fn read_line_sanitized_cmd(buff: &mut impl std::io::BufRead, line: &mut String) 
     let n = buff.read_line(line)?;
     *line = line.strip_prefix('>').unwrap_or(&line).to_string();
     Ok(n)
-}
-
-fn cmd_info(
-    shell: &mut std::process::Child,
-    cmd_stdout: &mut impl std::io::BufRead,
-    cmd_stderr: &mut impl std::io::BufRead,
-) -> std::io::Result<(String, String, i32)> {
-    let mut line = String::with_capacity(256);
-    let mut stdout = String::with_capacity(256);
-    let mut stderr = String::with_capacity(256);
-    let code;
-
-    while !stdout.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
-        cmd_stdout.read_line(&mut line)?;
-        print!("{line}");
-        stdout.push_str(&line);
-        line.clear();
-    }
-
-    while !stderr.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
-        cmd_stderr.read_line(&mut stderr)?;
-    }
-
-    match shell.try_wait()? {
-        Some(code_raw) => {
-            code = code_raw.code().unwrap();
-        }
-        None => {
-            let re = regex::Regex::new(r#"(\d+):CMDEND"#).unwrap();
-            let code_raw = re.captures(&stdout).unwrap().get(1).unwrap().as_str();
-
-            code = code_raw.parse::<i32>().unwrap();
-
-            stdout = stdout
-                .trim_end_matches(":CMDEND\n")
-                .trim_end_matches(code_raw)
-                .to_string();
-
-            stderr = stderr.trim_end_matches(":CMDEND\n").to_string();
-        }
-    }
-
-    Ok((stdout, stderr, code))
 }
