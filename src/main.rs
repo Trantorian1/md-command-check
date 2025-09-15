@@ -40,7 +40,7 @@ fn main() -> std::io::Result<()> {
         .stderr(std::process::Stdio::piped())
         .spawn()?;
 
-    let cmd_stdin = shell.stdin.take().unwrap();
+    let mut cmd_stdin = shell.stdin.take().unwrap();
     let mut cmd_stdout = std::io::BufReader::new(shell.stdout.take().unwrap());
     let mut cmd_stderr = std::io::BufReader::new(shell.stderr.take().unwrap());
 
@@ -61,6 +61,7 @@ fn main() -> std::io::Result<()> {
 
         // list of variables to be captures from the next code block output
         let mut var_local = Vec::with_capacity(8);
+        let mut kill_local = Vec::with_capacity(8);
 
         while read_line_sanitized(&mut buff, &mut line)? != 0 {
             line_number += 1;
@@ -82,11 +83,8 @@ fn main() -> std::io::Result<()> {
                                 return err_extract_no_var(&file_name, line_number);
                             };
 
-                            let mut pat = String::with_capacity((line.len() - 4 - var.len()).saturating_sub(4));
+                            let mut pat = String::new();
                             while let Some(word) = words.next() {
-                                if word == "-->" {
-                                    break;
-                                }
                                 if !pat.is_empty() {
                                     pat.push(' ');
                                 }
@@ -138,6 +136,24 @@ fn main() -> std::io::Result<()> {
                             alias.insert(0, '<');
                             alias.push('>');
                             vars.insert(alias, val);
+                        }
+                    }
+                    Some("kill") => {
+                        if !list {
+                            let mut pat = String::new();
+                            while let Some(word) = words.next() {
+                                if !pat.is_empty() {
+                                    pat.push(' ');
+                                }
+                                pat.push_str(word);
+                            }
+
+                            let pat = pat.trim_matches('"');
+                            let Ok(re) = regex::Regex::new(pat) else {
+                                return err_kill_pattern(&file_name, line_number, pat);
+                            };
+
+                            kill_local.push(re);
                         }
                     }
                     Some("ignore") => {
@@ -228,6 +244,14 @@ fn main() -> std::io::Result<()> {
                 while !stdout.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
                     cmd_stdout.read_line(&mut stdout)?;
 
+                    for re in kill_local.iter() {
+                        if re.is_match(&stdout) {
+                            shell.kill()?;
+                            shell.wait()?;
+                            break;
+                        }
+                    }
+
                     erase(&mut out, line_count)?;
                     line_count = draw_file_info(&mut out, Status::Running, &file_name, line_number)?;
                     line_count += draw_code(&mut out, Status::Running, &lang, &program_and_args, false)?;
@@ -237,6 +261,14 @@ fn main() -> std::io::Result<()> {
 
                 while !stderr.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
                     cmd_stderr.read_line(&mut stderr)?;
+
+                    for re in kill_local.iter() {
+                        if re.is_match(&stderr) {
+                            shell.kill()?;
+                            shell.wait()?;
+                            break;
+                        }
+                    }
 
                     erase(&mut out, line_count)?;
                     line_count = draw_file_info(&mut out, Status::Running, &file_name, line_number)?;
@@ -248,7 +280,20 @@ fn main() -> std::io::Result<()> {
 
                 match shell.try_wait()? {
                     Some(code_raw) => {
-                        code = code_raw.code().unwrap();
+                        code = match code_raw.code() {
+                            Some(n) => n,
+                            None => {
+                                shell = std::process::Command::new("sh")
+                                    .stdin(std::process::Stdio::piped())
+                                    .stdout(std::process::Stdio::piped())
+                                    .stderr(std::process::Stdio::piped())
+                                    .spawn()?;
+                                cmd_stdin = shell.stdin.take().unwrap();
+                                cmd_stdout = std::io::BufReader::new(shell.stdout.take().unwrap());
+                                cmd_stderr = std::io::BufReader::new(shell.stderr.take().unwrap());
+                                0
+                            }
+                        };
                     }
                     None => {
                         let re = regex::Regex::new(r#"(\d+):CMDEND"#).unwrap();
