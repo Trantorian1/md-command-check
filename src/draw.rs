@@ -57,7 +57,7 @@ pub fn draw_file_info(
                 "\
                     {PURPLE}╭[ 📁 {RESET}{BOLD}{file_name}{RESET}: \
                     code block at line {line_number} - \
-                    {PURPLE}CREATING FILE{RESET}\
+                    {PURPLE}NEW FILE{RESET}\
                 "
             )
         }

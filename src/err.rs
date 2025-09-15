@@ -36,6 +36,21 @@ pub fn ignored(file_name: &str, line_number: usize, program_and_args: &str, debu
     Ok(())
 }
 
+pub fn teardown(file_name: &str, line_number: usize, cmd: &str) -> std::io::Result<()> {
+    write!(
+        std::io::stdout(),
+        "\
+            {PURPLE}╭[ 🤖 {BOLD}{file_name}{RESET}: \
+            custom command at line {line_number} - \
+            {PURPLE}TEARDOWN{RESET}\n\
+        "
+    )?;
+
+    log_program(cmd, true, PURPLE)?;
+
+    Ok(())
+}
+
 pub fn err(file_name: &str) -> std::io::Result<()> {
     write!(std::io::stdout(), "{RED}╭[ ❌ {RESET}{BOLD}{file_name}{RESET}: ",)
 }

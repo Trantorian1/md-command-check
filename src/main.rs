@@ -157,6 +157,23 @@ fn main() -> std::io::Result<()> {
                             kill_local.push(re);
                         }
                     }
+                    Some("teardown") => {
+                        let mut cmd = String::new();
+                        while let Some(word) = words.next() {
+                            if !cmd.is_empty() {
+                                cmd.push(' ');
+                            }
+                            cmd.push_str(word);
+                        }
+
+                        let cmd = cmd.trim_matches('"');
+
+                        teardown(&file_name, line_number, cmd)?;
+
+                        if !list {
+                            writeln!(&cmd_stdin, "{cmd}")?;
+                        }
+                    }
                     Some("file") => {
                         let Some(file) = words.next().map(String::from) else {
                             return err_file_name(&file_name, line_number);
@@ -207,8 +224,10 @@ fn main() -> std::io::Result<()> {
                     draw_code(&mut out, Status::NEWFILE, &lang, &program_and_args, true)?;
                     flush(&mut out)?;
 
-                    let mut file = std::fs::File::create(path)?;
-                    file.write_all(program_and_args.as_bytes())?;
+                    if !list {
+                        let mut file = std::fs::File::create(path)?;
+                        file.write_all(program_and_args.as_bytes())?;
+                    }
 
                     cmd_file = None;
 
