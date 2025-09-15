@@ -8,7 +8,7 @@ use colors::*;
 use draw::*;
 use err::*;
 
-fn main() -> std::io::Result<()> {
+fn main() -> std::io::Result<std::process::ExitCode> {
     let mut args = std::env::args().skip(1).peekable();
 
     // options
@@ -362,6 +362,10 @@ fn main() -> std::io::Result<()> {
                 write!(out, "{WRAP_ENABLE}")?;
                 flush(&mut out)?;
 
+                if code != 0 {
+                    return Ok(std::process::ExitCode::FAILURE);
+                }
+
                 // ============================================================================== //
                 //                                 OUTPUT CAPTURE                                 //
                 // ============================================================================== //
@@ -397,7 +401,7 @@ fn main() -> std::io::Result<()> {
 
     shell.kill()?;
 
-    Ok(())
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 fn read_line_sanitized(buff: &mut impl std::io::BufRead, line: &mut String) -> std::io::Result<usize> {
