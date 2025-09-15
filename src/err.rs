@@ -101,6 +101,11 @@ pub fn err_kill_pattern(file_name: &str, line_number: usize, pat: &str) -> std::
     write!(std::io::stdout(), "{RED}Invalid pattern:{RESET}{pat}\n")
 }
 
+pub fn err_file_name(file_name: &str, line_number: usize) -> std::io::Result<()> {
+    err_line_directive(file_name, line_number, "file")?;
+    write!(std::io::stdout(), "{RED}Missing file name{RESET}\n")
+}
+
 pub fn err_no_lang(file_name: &str, line_number: usize) -> std::io::Result<()> {
     err_line_code(file_name, line_number)?;
     write!(std::io::stdout(), "{RED}No language specified{RESET}\n")

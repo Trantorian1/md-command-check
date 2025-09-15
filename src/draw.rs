@@ -4,9 +4,10 @@ use crate::colors::*;
 
 #[derive(Clone, Copy)]
 pub enum Status {
-    Running,
+    RUNNING,
     PASS,
     FAIL,
+    NEWFILE,
 }
 
 pub fn erase(out: &mut impl std::io::Write, line_count: usize) -> std::io::Result<()> {
@@ -20,7 +21,7 @@ pub fn draw_file_info(
     line_number: usize,
 ) -> std::io::Result<usize> {
     match status {
-        Status::Running => {
+        Status::RUNNING => {
             writeln!(
                 out,
                 "\
@@ -47,6 +48,16 @@ pub fn draw_file_info(
                     {RED}╭[ ❌ {RESET}{BOLD}{file_name}{RESET}: \
                     code block at line {line_number} - \
                     {RED}FAIL{RESET}\
+                "
+            )
+        }
+        Status::NEWFILE => {
+            writeln!(
+                out,
+                "\
+                    {PURPLE}╭[ 📁 {RESET}{BOLD}{file_name}{RESET}: \
+                    code block at line {line_number} - \
+                    {PURPLE}CREATING FILE{RESET}\
                 "
             )
         }
@@ -149,9 +160,10 @@ pub fn draw_output(
 
 pub fn accent(status: Status) -> &'static str {
     match status {
-        Status::Running => YELLOW,
+        Status::RUNNING => YELLOW,
         Status::PASS => GREEN,
         Status::FAIL => RED,
+        Status::NEWFILE => PURPLE,
     }
 }
 

@@ -50,14 +50,15 @@ fn main() -> std::io::Result<()> {
             return err_file_ext(&file_name);
         }
 
-        let Ok(file) = std::fs::File::open(path) else {
+        let Ok(file) = std::fs::File::open(&path) else {
             return err_file_open(&file_name);
         };
 
         let mut buff = std::io::BufReader::new(file);
         let mut line_number = 0;
         let mut line_number_code;
-        let mut ignore_cmd = false;
+        let mut cmd_ignore = false;
+        let mut cmd_file = None;
 
         // list of variables to be captures from the next code block output
         let mut var_local = Vec::with_capacity(8);
@@ -156,8 +157,14 @@ fn main() -> std::io::Result<()> {
                             kill_local.push(re);
                         }
                     }
+                    Some("file") => {
+                        let Some(file) = words.next().map(String::from) else {
+                            return err_file_name(&file_name, line_number);
+                        };
+                        cmd_file = Some(file);
+                    }
                     Some("ignore") => {
-                        ignore_cmd = true;
+                        cmd_ignore = true;
                     }
                     _ => {}
                 }
@@ -192,24 +199,34 @@ fn main() -> std::io::Result<()> {
                     program_and_args = program_and_args.replace(var, val.as_ref());
                 }
 
-                if lang != "bash" && lang != "sh" || ignore_cmd {
-                    ignored(&file_name, line_number, &program_and_args, debug)?;
-                    ignore_cmd = false;
-                    out.flush()?;
+                if let Some(file) = cmd_file {
+                    let path = path.with_file_name(file);
+                    let path_str = path.to_string_lossy();
+
+                    draw_file_info(&mut out, Status::NEWFILE, &path_str, line_number)?;
+                    draw_code(&mut out, Status::NEWFILE, &lang, &program_and_args, true)?;
+                    flush(&mut out)?;
+
+                    let mut file = std::fs::File::create(path)?;
+                    file.write_all(program_and_args.as_bytes())?;
+
+                    cmd_file = None;
+
                     line.clear();
                     cmd.clear();
                     line_number = line_number_code + 1;
                     continue;
-                }
+                } else if lang != "bash" && lang != "sh" || cmd_ignore {
+                    ignored(&file_name, line_number, &program_and_args, debug)?;
 
-                if list {
+                    cmd_ignore = false;
+
+                    line.clear();
+                    cmd.clear();
+                    line_number = line_number_code + 1;
+                    continue;
+                } else if list {
                     listed(&file_name, line_number, &program_and_args, debug)?;
-
-                    let mut stdout = std::io::stdout();
-                    stdout.write_all(&out)?;
-                    out.clear();
-                    stdout.flush()?;
-
                     line.clear();
                     cmd.clear();
                     line_number = line_number_code + 1;
@@ -236,9 +253,9 @@ fn main() -> std::io::Result<()> {
 
                 write!(out, "{WRAP_DISABLE}")?;
 
-                line_count += draw_file_info(&mut out, Status::Running, &file_name, line_number)?;
-                line_count += draw_code(&mut out, Status::Running, &lang, &program_and_args, false)?;
-                line_count += draw_output(&mut out, Status::Running, &stdout, "stdout", true)?;
+                line_count += draw_file_info(&mut out, Status::RUNNING, &file_name, line_number)?;
+                line_count += draw_code(&mut out, Status::RUNNING, &lang, &program_and_args, false)?;
+                line_count += draw_output(&mut out, Status::RUNNING, &stdout, "stdout", true)?;
                 flush(&mut out)?;
 
                 while !stdout.ends_with(":CMDEND\n") && shell.try_wait()?.is_none() {
@@ -253,9 +270,9 @@ fn main() -> std::io::Result<()> {
                     }
 
                     erase(&mut out, line_count)?;
-                    line_count = draw_file_info(&mut out, Status::Running, &file_name, line_number)?;
-                    line_count += draw_code(&mut out, Status::Running, &lang, &program_and_args, false)?;
-                    line_count += draw_output(&mut out, Status::Running, &stdout, "stdout", true)?;
+                    line_count = draw_file_info(&mut out, Status::RUNNING, &file_name, line_number)?;
+                    line_count += draw_code(&mut out, Status::RUNNING, &lang, &program_and_args, false)?;
+                    line_count += draw_output(&mut out, Status::RUNNING, &stdout, "stdout", true)?;
                     flush(&mut out)?;
                 }
 
@@ -271,10 +288,10 @@ fn main() -> std::io::Result<()> {
                     }
 
                     erase(&mut out, line_count)?;
-                    line_count = draw_file_info(&mut out, Status::Running, &file_name, line_number)?;
-                    line_count += draw_code(&mut out, Status::Running, &lang, &program_and_args, false)?;
-                    line_count += draw_output(&mut out, Status::Running, &stdout, "stdout", false)?;
-                    line_count += draw_output(&mut out, Status::Running, &stderr, "stdout", true)?;
+                    line_count = draw_file_info(&mut out, Status::RUNNING, &file_name, line_number)?;
+                    line_count += draw_code(&mut out, Status::RUNNING, &lang, &program_and_args, false)?;
+                    line_count += draw_output(&mut out, Status::RUNNING, &stdout, "stdout", false)?;
+                    line_count += draw_output(&mut out, Status::RUNNING, &stderr, "stdout", true)?;
                     flush(&mut out)?;
                 }
 
