@@ -217,6 +217,29 @@ cat .env
 
 ## Limitations
 
+Currently, `md-command-check` works by spawning a long-lived `sh` process which it interacts with by
+feeding in new commands via a hijacked `stdin`, while listening to `stdout` and `stderr` to
+determine when it is done executing a code block. This has several limitations:
+
+1. There is no way to properly handle blocking commands. Spawning them in a separate process is not
+   a valid solution as this would lose the execution context, including the current working
+   directory and any environment variables which might have been set earlier on in the execution.
+
+2. Sending inputs to `sh` is clunky, and there is no way to react to output which is async. In fact,
+   it is very easy to soft-lock on a call to `readline` in this way.
+
+These limitations highlight the difficulty associated to `md-command-check` not fully controlling
+the execution of its commands. A solution to this problem would be the development of a 
+[POSIX-compliant] shell engine which allows for the in-memory execution of shell scripts. This would
+allow for arbitrary rerouting of input and output streams as well as the implementation of an async
+waker system on stream writes. Most notably though, this would enable the easy spawning of 
+background thread to run blocking commands in the same shell execution context, something which `sh`
+does not allow programatically.
+
+This is a pretty large undertaking, and I don't have plans to work on this in the short term. In the 
+meantime, `md-command-check` will retain its current working state and limitations.
+
 [regex capture]: https://www.regular-expressions.info/brackets.html
 [limitiation]: #limitations
 [limitiations]: #limitations
+[POSIX-compliant]: https://pubs.opengroup.org/onlinepubs/9799919799/
