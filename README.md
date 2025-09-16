@@ -100,7 +100,7 @@ This is especially useful when certain commands in your markdown files require s
 
 > [!TIP]
 > Variables declared with `extract` and `env` can be re-used across documents. If you run
-
+>
 > ```bash
 > md-command-check --debug FILE1.md FILE2.md
 > ```
